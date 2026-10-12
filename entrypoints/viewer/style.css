@@ -1,0 +1,2228 @@
+:root {
+  --font: 'Manrope Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* One line weight and one shadow for the arrows and the dots they start from. */
+  --arrow-width: 2.5px;
+  --arrow-shadow: 0 1px 1.5px rgb(0 0 0 / 0.22);
+  /* Width of the tools sidebar on the left of the canvas. */
+  --sidebar: 76px;
+  --bg: #f4f3f1;
+  --card: #ffffff;
+  --field: #f7f7f8;
+  --track: #efecee;
+  --hover: #f4f4f5;
+  --text: #33002d;
+  --muted: #6e6e73;
+  --border: #e4e4e7;
+  --border-strong: #c4c4c8;
+  --accent: #8a3b78;
+  --accent-hover: #742f64;
+  --accent-ring: rgb(138 59 120 / 0.22);
+  --danger: #e5484d;
+  --danger-hover: #cd2b31;
+  /* The edge of each screenshot and the line under the top bar. */
+  --frame: #dad5d8;
+  /* The dots in the canvas's background grid. */
+  --dot: #e3e0e2;
+  /* The scrollbar under the screens, in the palette's plum greys: the line colour at rest, a
+     deeper plum grey while the flow is hovered, and a deeper one again when it's grabbed (purple
+     is kept for things you act on, like arrows). */
+  --scroll-thumb: #dad5d8;
+  --scroll-thumb-hover: #bfb1ba;
+  --scroll-thumb-active: #7a6474;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111113;
+    --card: #1c1c1e;
+    --field: #232326;
+    --track: #232326;
+    --hover: #2a2a2d;
+    --text: #f5f5f7;
+    --muted: #a1a1a6;
+    --border: #2c2c2e;
+    --border-strong: #48484a;
+    --dot: rgb(255 255 255 / 0.09);
+    --frame: #2c2c2e;
+    --scroll-thumb: rgb(255 255 255 / 0.14);
+    --scroll-thumb-hover: rgb(255 255 255 / 0.24);
+    --scroll-thumb-active: rgb(255 255 255 / 0.38);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* No rubber-band bounce past the top or bottom of the page, which pulled the canvas and its top
+   bar away from the edge of the window. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  /* A fine, faint dot grid, like a design tool's canvas. Fixed, so the dots stay put while the flow
+     scrolls past, and started at the bottom of the top bar (60px) so no row is cut in half. */
+  background: radial-gradient(circle, var(--dot) 0.9px, transparent 1.2px) 0 60px / 16px 16px fixed, var(--bg);
+  color: var(--text);
+  font: 700 14px/1.4 var(--font);
+}
+
+main {
+  padding: 32px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The top bar: the flow's name on the left, downloads on the right. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 60px;
+  padding: 0 12px 0 16px;
+  background: var(--card);
+  border-bottom: 1.5px solid var(--frame);
+}
+
+.topbar-start,
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-end {
+  position: relative;
+  flex: none;
+  gap: 8px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font-weight: 700;
+}
+
+/* The name set as a wordmark: tightly spaced, in the text colour and Manrope's heaviest weight. */
+.brand-name {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+/* The clay logo, on no background of its own. */
+.brand-mark {
+  display: block;
+  width: 40px;
+  height: 30px;
+  object-fit: contain;
+}
+
+/* The logo and the flow's name, set apart by space rather than a separator: 40px with the bar's
+   10px gap. */
+.topbar .brand {
+  margin-right: 30px;
+}
+
+.topbar-meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/*
+ * The flow's name reads as the page's title, not a button: plain text with no box. Hovering it
+ * shows a light background, to say it can be renamed; editing shows a field.
+ * `.topbar` in front so it wins over the top bar's button styles.
+ */
+.topbar .flow-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Never squeezed out by the buttons: at least the start of the name always shows. */
+  min-width: 160px;
+  max-width: min(440px, 40vw);
+  height: 32px;
+  padding: 0 8px;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: 600 15px/1 var(--font);
+  cursor: text;
+  transition: background 0.15s;
+}
+
+/* Lined up with the text around it, not the edge of its hover background. */
+.topbar button.flow-name {
+  margin: 0 -4px;
+  min-width: 0;
+}
+
+/* The first time a flow is opened: a soft purple glow behind the name, once, to say it can be
+   renamed. It waits for the page to settle, rises gently and fades out. */
+.topbar .flow-name.hint {
+  animation: name-hint 1600ms cubic-bezier(0.23, 1, 0.32, 1) 700ms both;
+}
+
+@keyframes name-hint {
+  0%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+  35% {
+    background: rgb(138 59 120 / 0.1);
+    box-shadow: 0 0 0 3px rgb(138 59 120 / 0.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar .flow-name.hint {
+    animation: none;
+  }
+}
+
+.topbar .flow-name:hover:not(:disabled) {
+  background: rgb(127 127 127 / 0.12);
+}
+
+.flow-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar .flow-name:focus-visible,
+.topbar .flow-name-input {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.topbar .flow-name-input {
+  width: min(440px, 40vw);
+  margin: 0 -4px;
+}
+
+/* Buttons */
+.topbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1.5px solid var(--frame);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font: 700 13px/1 var(--font);
+  cursor: pointer;
+}
+
+.topbar button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.topbar button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.topbar button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.topbar button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.button-group {
+  display: inline-flex;
+}
+
+.button-group button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.button-group button:first-child {
+  margin-left: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.button-group button:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.topbar button.primary {
+  padding: 0 14px;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* An icon first: its drawing sits a little inside its box, so the left side is a touch narrower to look even. */
+.topbar button.primary:has(> svg:first-child) {
+  padding-left: 12px;
+}
+
+.topbar button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.downloads {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.topbar .downloads .chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  opacity: 0.85;
+  /* Flips over its middle line, easing in and out. */
+  transition: transform 280ms cubic-bezier(0.65, 0, 0.35, 1);
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+/* Points up while the menu is open. */
+.topbar .downloads [aria-expanded='true'] .chevron {
+  transform: scaleY(-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar .downloads .chevron {
+    transition: none;
+  }
+}
+
+/* The Download menu: format, and whether to include screenshots. */
+.download-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 340px;
+  padding: 20px;
+  border: 1.5px solid var(--frame);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.06);
+}
+
+.download-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.segmented {
+  display: grid;
+  margin-bottom: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--track);
+}
+
+.topbar .segmented button {
+  justify-content: center;
+  height: 36px;
+  border: 1.5px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.topbar .segmented button.selected {
+  border-color: var(--accent);
+  background: var(--card);
+  color: var(--text);
+}
+
+.download-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1.5px solid var(--frame);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.download-option:hover {
+  border-color: var(--border-strong);
+}
+
+.download-option input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.download-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.download-option-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.download-option-hint {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.topbar .download-go {
+  justify-content: center;
+  width: 100%;
+  height: 42px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+
+.topbar-divider {
+  width: 1.5px;
+  height: 20px;
+  background: var(--border);
+}
+
+/* Continue capture: back to the page to keep recording into this flow. On the right, just before
+   Copy for Figma. */
+.continue {
+  position: relative;
+  flex: none;
+}
+
+/* A plain back link rather than a boxed button: no border or fill until hovered. */
+.topbar .continue-button {
+  border-color: transparent;
+  background: none;
+}
+
+
+/*
+ * When the bar is too narrow for everything at full size (worked out in TopBar), Continue capture
+ * (and any other secondary copy button) shows just its icon (its name stays as a tooltip), so the
+ * flow's name keeps its room. The main action keeps its name.
+ */
+.topbar.compact :not(.primary) > .btn-label {
+  display: none;
+}
+
+.topbar.compact .continue button:not(.primary) {
+  padding: 0 9px;
+}
+
+@media (max-width: 960px) {
+  .topbar-meta {
+    display: none;
+  }
+}
+
+/* A short confirmation under the downloads. */
+.toast {
+  position: absolute;
+  top: calc(100% + 18px);
+  right: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.1);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.screens {
+  position: relative;
+  display: flex;
+  /* Room between screens for the arrows: 32px at the usual zoom and closer in. Zoomed further
+     out it stops shrinking at 12px on screen, so small screens don't crowd together. The arrows
+     and the + for adding a page measure the gap, so they follow it. */
+  --gap: max(32px, calc(12px / var(--zoom, 1)));
+  gap: var(--gap);
+  align-items: flex-start;
+  margin: 0;
+  /* Room above and to the right for the delete button, which hangs over a screen's corner. Little
+     below, so the scrollbar sits just under the screens (this grows as the flow is zoomed in). */
+  /* On the left, the space between the sidebar and the first screen: 32px at the canvas's usual
+     70%, growing and shrinking with the screens as the flow is zoomed. */
+  /* Above: 14px at the usual zoom; zoomed far out, room for a screen's trash button (a constant
+     size, sitting just above the screen then) so it's never cut off at the top. */
+  padding: max(14px, calc(34px / var(--zoom, 1) - 40px)) 14px 6px 46px;
+  list-style: none;
+  overflow-x: auto;
+  /* Only sideways: the page scrolls up and down, so the row never shows a second, vertical
+     scrollbar of its own (which anything overhanging the screens could otherwise cause). */
+  overflow-y: hidden;
+}
+
+/* The scrollbar under the screens: a thin, rounded thumb with no track, a little darker while the
+   pointer is over the flow and darker again when grabbed. */
+.screens::-webkit-scrollbar {
+  width: 0;
+  height: 12px;
+}
+
+.screens::-webkit-scrollbar-track {
+  background: transparent;
+  /* Inset from both ends, so the bar never touches the sidebar: it starts in line with the first
+     screen, 24px out on screen at any zoom. */
+  margin: 0 calc(24px / var(--zoom, 1));
+}
+
+.screens::-webkit-scrollbar-thumb {
+  /* The clear border makes the visible thumb a slim 6px bar inside a larger grab area. */
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb) padding-box;
+  transition: background 0.2s;
+}
+
+.screens:hover::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb-hover);
+}
+
+.screens::-webkit-scrollbar-thumb:hover,
+.screens::-webkit-scrollbar-thumb:active {
+  background-color: var(--scroll-thumb-active);
+}
+
+/* Arrows from each click to the screen it led to, over the cards. */
+.arrows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* The arrows you see: over notes, blurs and circles (which sit at 2), so nothing hides them. */
+.arrows-shown {
+  z-index: 5;
+  /* The same soft shadow as the dots the arrows start from. */
+  filter: drop-shadow(var(--arrow-shadow));
+}
+
+.arrow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: var(--arrow-width);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.arrow.dashed {
+  stroke-dasharray: 6 5;
+}
+
+/* The arrow's tip: an open chevron in the same line as the arrow. */
+.arrow-head {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: var(--arrow-width);
+  stroke-linecap: round;
+  stroke-linejoin: miter;
+}
+
+.arrows g.selected .arrow-head {
+  stroke-width: calc(var(--arrow-width) + 1px);
+}
+
+/* An invisible, wider copy of each arrow that takes the clicks. */
+.arrow-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  /* Dragged to move where it starts. */
+  cursor: grab;
+  touch-action: none;
+}
+
+/* Around each arrow, a margin where the pointer is an ordinary arrow and clicking does nothing. */
+.arrow-guard {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 52;
+  pointer-events: stroke;
+  cursor: default;
+}
+
+.arrows g.selected .arrow {
+  stroke-width: calc(var(--arrow-width) + 1px);
+}
+
+.screens li {
+  position: relative;
+  /* Its own width: screenshots share one scale, so a narrower window shows as a narrower card
+     (see scale.ts). */
+  flex: 0 0 var(--card-w, 640px);
+  /* Deleting: fade out, then close the gap so the screens after it slide over. */
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out,
+    flex-basis 300ms 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-right 300ms 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.screens li.removing {
+  /* Clip its contents while it narrows to nothing. */
+  overflow: hidden;
+  flex-basis: 0;
+  /* Also takes back the gap after it. */
+  margin-right: calc(-1 * var(--gap));
+  opacity: 0;
+  transform: scale(0.94);
+  pointer-events: none;
+}
+
+/*
+ * The trash button for deleting a screen, at the end of its title row (off the card, so nothing on
+ * the screen can sit under it). Shown while the screen is hovered: a small rounded square, white
+ * with the canvas's line, turning a soft red when the pointer is on it.
+ */
+.delete {
+  --size: var(--trash, calc(26px / var(--zoom, 1)));
+  position: absolute;
+  right: 0;
+  /* Just above the screen at its right edge, a few pixels clear of it, at any zoom. */
+  top: calc(100% - var(--size) - max(4px, calc(4px / var(--zoom, 1))));
+  /* Above the screen it may overlap (zoomed far out), its border and anything on it. */
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border: calc(1.5px / var(--zoom, 1)) solid var(--frame);
+  border-radius: calc(7px / var(--zoom, 1));
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  /* Leaving: waits a good moment in case the pointer only slipped off, so it can still be clicked,
+     then fades away. */
+  transition:
+    opacity 160ms ease-out 700ms,
+    background 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+
+.delete svg {
+  width: 56%;
+  height: 56%;
+}
+
+/* A margin around it, above too, that still counts as over it (and the screen), so overshooting it
+   slightly doesn't start it fading. */
+.delete::before {
+  content: '';
+  position: absolute;
+  inset: calc(-14px / var(--zoom, 1));
+}
+
+.screens > li:hover .delete,
+.delete:focus-visible {
+  opacity: 1;
+  /* Appearing: a short pause, so moving across the canvas doesn't flash every trash button. */
+  transition:
+    opacity 160ms ease-out 80ms,
+    background 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+
+.delete:hover {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.delete:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .delete,
+  .screens > li:hover .delete {
+    transition: opacity 120ms;
+  }
+}
+
+/* "Screen deleted · Undo" */
+.undo-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px 10px 16px;
+  border-radius: 10px;
+  background: #1f1f1f;
+  color: #ffffff;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  transform: translateX(-50%);
+  animation: toast-in 180ms ease-out;
+}
+
+.undo-toast button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.12);
+  color: #ffffff;
+  font: 700 13px/1 var(--font);
+  cursor: pointer;
+}
+
+.undo-toast button:hover {
+  background: rgb(255 255 255 / 0.22);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screens li,
+  .delete,
+  .undo-toast {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* The screen's number and name sit on the canvas above it, so they don't read as part of the page. */
+.meta {
+  /* The trash button's size on the canvas: 26px at 100% and growing with the screens zoomed in,
+     but never smaller than 26px on screen zoomed out, so it's always easy to click. It sits over
+     the row's right end rather than in it, so it never makes the row taller (zoomed far out, that
+     pushed the name up away from its screen); the name stops short of it. */
+  --trash: max(26px, calc(26px / var(--zoom, 1)));
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  /* The screen's number and name. */
+  font-size: 18px;
+  padding: 0 calc(var(--trash) + 6px) 11px 2px;
+}
+
+/* The screen itself: a white card holding just the screenshot. */
+.card {
+  position: relative;
+  /* Nothing behind the screenshot: a white card showed through as a pale rim where its rounded,
+     zoomed edges are smoothed. */
+  background: none;
+  /* 10px on screen at the usual zoom and closer in; zoomed further out, the corners shrink with
+     the screens (14px in the screen's own units), so small screens don't look overly rounded. */
+  --corner: min(calc(10px / var(--zoom, 1)), 14px);
+  border-radius: var(--corner);
+}
+
+/* The border, just outside the screenshot so it covers none of it. 1.5px on screen at any zoom,
+   like the line under the top bar: the canvas is zoomed, so it's widened by as much as the zoom
+   shrinks it. Under notes, blurs and circles. */
+.card::after {
+  --line: calc(1.5px / var(--zoom, 1));
+  content: '';
+  position: absolute;
+  inset: calc(var(--line) * -1);
+  z-index: 1;
+  border: var(--line) solid var(--frame);
+  border-radius: calc(var(--corner) + var(--line));
+  pointer-events: none;
+}
+
+.num {
+  color: var(--muted);
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 700;
+}
+
+/* Around a screen's name, a margin where the pointer is ordinary and clicking does nothing, so
+   reaching for the name doesn't add a note to the screen just below it. */
+.name-zone {
+  position: relative;
+  z-index: 3;
+  isolation: isolate;
+  display: flex;
+  min-width: 0;
+}
+
+.name-zone.editing {
+  flex: 1;
+}
+
+.name-zone::before {
+  content: '';
+  position: absolute;
+  inset: -12px -12px -18px;
+  z-index: -1;
+  cursor: default;
+}
+
+/* A screen's name, renamed in place: a light background shows on hover. */
+.screen-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: -3px 0 -3px -6px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: text;
+}
+
+.screen-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-name:hover {
+  background: rgb(127 127 127 / 0.12);
+}
+
+.screen-name:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.screen-name-input {
+  flex: 1;
+  min-width: 0;
+  margin: -4px 0 -4px -6px;
+  padding: 3px 6px;
+  border: 1.5px solid var(--accent);
+  border-radius: 5px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.unlinked {
+  margin: -4px 0 0;
+  padding: 0 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.shot {
+  position: relative;
+  /* Rounded like the card, filling it to its edge. The card doesn't clip (so the delete button can
+     hang over its corner), so the screenshot clips its own contents. */
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+}
+
+.arrow-start {
+  position: absolute;
+  /* Above the arrows, which start from its centre, and above the trash button and the margin
+     around it, so a dot near the screen's corner can still be dragged. */
+  z-index: 6;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  padding: 0;
+  border-radius: 50%;
+  /* A solid dot in the arrow's colour, casting the arrow's shadow. */
+  background: var(--accent);
+  /* Exactly as thick as the arrow's line. */
+  border: var(--arrow-width) solid var(--accent);
+  box-shadow: var(--arrow-shadow);
+  cursor: grab;
+  touch-action: none;
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+/* A bigger area to grab than the dot itself. */
+.arrow-start::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+}
+
+.arrow-start:hover,
+.arrow-start.selected {
+  transform: scale(1.35);
+}
+
+.arrow-start.selected,
+.arrow-start:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--accent-ring), var(--arrow-shadow);
+}
+
+.arrow-start.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.screens li.placeholder {
+  flex-basis: 440px;
+  min-width: 0;
+  max-width: 440px;
+}
+
+/* A page in a tab that wasn't recorded: laid out like a written page (a large icon, a headline and
+   text, with a dashed outline), but on an empty card, since there's nothing to show. */
+.screens li.placeholder .card {
+  background: transparent;
+}
+
+.screens li.placeholder .card::after {
+  border-style: dashed;
+}
+
+.placeholder-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 300px;
+  padding: 28px 28px 22px;
+  text-align: left;
+}
+
+.placeholder-icon {
+  display: block;
+  margin-bottom: 18px;
+  /* Grey: nothing was captured here, unlike an added step's purple icon. */
+  color: var(--muted);
+}
+
+.placeholder-icon svg {
+  display: block;
+  width: 44px;
+  height: 44px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.placeholder-title {
+  margin: 0 0 8px;
+  color: var(--text);
+  font: 700 24px/1.25 var(--font);
+  overflow-wrap: anywhere;
+}
+
+.placeholder-body a {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font: 500 17px/1.5 var(--font);
+  overflow-wrap: anywhere;
+}
+
+.placeholder-note {
+  margin: 0;
+  color: var(--muted);
+  font: 500 17px/1.5 var(--font);
+}
+
+.empty {
+  padding: 32px;
+  color: var(--muted);
+}
+
+/* Sticky notes on screens, dragged on from the sidebar. Square and flat yellow, with the text
+   centred and a shadow under the bottom edge, like a sticky note in Miro. */
+
+.note {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  padding: 10px;
+  background: #ffec85;
+  color: #33002d;
+  cursor: grab;
+  touch-action: none;
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 0.06),
+    0 5px 6px -4px rgb(0 0 0 / 0.35);
+}
+
+.note:active {
+  cursor: grabbing;
+}
+
+.note-delete {
+  position: absolute;
+  /* Outside the corner, as the note is too small to hold it without covering the text. */
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #2b2b2b;
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.note-delete svg {
+  width: 10px;
+  height: 10px;
+}
+
+.note:hover .note-delete,
+.note:focus-within .note-delete {
+  opacity: 1;
+}
+
+/* A note being hovered or edited comes above the screen's trash button, so its own × can always be
+   clicked, even when it sits on the screen's corner. Blurs and circles do the same. */
+.note:hover,
+.note:focus-within,
+.mark:hover,
+.mark:focus-within {
+  z-index: 4;
+}
+
+.note-delete:hover {
+  background: var(--danger);
+}
+
+.note-delete:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.note-text {
+  display: block;
+  width: 100%;
+  max-height: 100%;
+  min-height: 1lh;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-family: var(--font);
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  resize: none;
+  field-sizing: content;
+  overflow: hidden;
+  outline: none;
+  cursor: text;
+}
+
+.note-text::placeholder {
+  color: rgb(43 43 43 / 0.45);
+}
+
+.note:focus-within {
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 5px 6px -4px rgb(0 0 0 / 0.35);
+}
+
+/* The colour palette beside a selected note: a white pill holding a circle for each colour. */
+.note-colors {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.14);
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-4px, -50%);
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+}
+
+.note:focus-within .note-colors {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+
+.note-colors button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  cursor: pointer;
+  transition: transform 120ms ease-out;
+}
+
+.note-colors button:hover {
+  transform: scale(1.12);
+}
+
+.note-colors button[aria-checked='true'] {
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 2px #ffffff, 0 0 0 3.5px var(--accent);
+}
+
+.note-colors button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent-ring), 0 0 0 3.5px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-colors {
+    transition: none;
+  }
+}
+
+/* Room on the left of the canvas for the sidebar. */
+/* The flow's row starts right at the sidebar's edge, so screens scrolled left are cut off exactly
+   under it rather than a little short of it. The space before the first screen is inside the row. */
+main {
+  padding-left: var(--sidebar);
+}
+
+/* Blurs and circles on screens. */
+.mark {
+  position: absolute;
+  z-index: 2;
+  cursor: move;
+  touch-action: none;
+  outline: none;
+}
+
+/* On the canvas a blur frosts what's under it; exports blur the image itself. */
+.mark-blur {
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.12);
+  backdrop-filter: blur(9px);
+}
+
+/* In one of the screen's rounded corners: rounded to the screen's own curve there, never past it. */
+.mark-blur.at-tl {
+  border-top-left-radius: var(--corner);
+}
+
+.mark-blur.at-tr {
+  border-top-right-radius: var(--corner);
+}
+
+.mark-blur.at-bl {
+  border-bottom-left-radius: var(--corner);
+}
+
+.mark-blur.at-br {
+  border-bottom-right-radius: var(--corner);
+}
+
+/* The circle's drawing only, not the icon in its delete button. */
+.mark-circle > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.mark-circle > svg path {
+  fill: none;
+  stroke: #1c1c1e;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Hovered or selected: an outline, the delete button and the resize handle show. */
+.mark:hover,
+.mark:focus-visible,
+.mark:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* 20px on screen at any zoom, hanging over the box's corner, with a wider invisible ring around
+   it to click, so it's easy to hit even when the flow is zoomed out. */
+.mark-delete {
+  --size: calc(20px / var(--zoom, 1));
+  position: absolute;
+  top: calc(var(--size) / -2);
+  right: calc(var(--size) / -2);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #2b2b2b;
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+
+.mark-delete::before {
+  content: '';
+  position: absolute;
+  inset: calc(-6px / var(--zoom, 1));
+  border-radius: 50%;
+}
+
+.mark-delete svg {
+  width: 60%;
+  height: 60%;
+}
+
+.mark-delete:hover {
+  background: var(--danger);
+}
+
+.mark-resize {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  background: #ffffff;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+
+.mark:hover .mark-delete,
+.mark:hover .mark-resize,
+.mark:focus .mark-delete,
+.mark:focus .mark-resize,
+.mark:focus-within .mark-delete,
+.mark:focus-within .mark-resize {
+  opacity: 1;
+}
+
+/* A blur or circle being dragged from the toolbar onto a screen, centred on the pointer. */
+.mark-ghost {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px var(--accent);
+  transform: translate(-50%, -50%);
+}
+
+.mark-ghost-circle {
+  border: 3px solid #1c1c1e;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+/* Layout, in the Download menu: rows for the flow image, with a preview of its shape. */
+.download-rule {
+  height: 1.5px;
+  margin: 0 0 16px;
+  background: var(--frame);
+}
+
+.layout-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.layout-head .download-label {
+  margin: 0;
+}
+
+.layout-step {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The same as the zoom − / + in the bottom toolbar: plain icon buttons with a light hover. */
+.topbar .layout-step button {
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+}
+
+.topbar .layout-step button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.topbar .layout-step button:disabled {
+  opacity: 0.4;
+}
+
+.topbar .layout-step button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.layout-step output {
+  min-width: 28px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The flow in a frame on a dotted canvas, like a Figma thumbnail: the canvas's own colours. */
+.layout-preview {
+  height: 126px;
+  border: 1.5px solid var(--frame);
+  border-radius: 9px;
+  background: radial-gradient(circle, var(--dot) 0.9px, transparent 1.2px) 0 0 / 8px 8px, var(--bg);
+}
+
+.layout-preview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.layout-preview text {
+  fill: #8e8e93;
+  font: 700 8px var(--font);
+}
+
+.layout-frame {
+  fill: #ffffff;
+  filter: drop-shadow(0 1px 1.4px rgb(0 0 0 / 0.12));
+}
+
+.layout-screen {
+  fill: #d9d9dd;
+  stroke: #48484a;
+  stroke-width: 1;
+}
+
+.layout-arrow {
+  fill: none;
+  stroke: #1c1c1e;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.layout-arrowhead {
+  fill: none;
+  stroke: #1c1c1e;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.layout-caption {
+  margin: 8px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.layout-preview .layout-more {
+  fill: #6e6e73;
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* The tools sidebar: a thin grey strip down the left of the canvas. Each item shows the thing
+   itself (a sticky note, a blur, a circle) as a small card, so it reads as something to pick up
+   and drag onto a screen. */
+.sidebar {
+  position: fixed;
+  top: 60px;
+  bottom: 0;
+  left: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: var(--sidebar);
+  /* The tools start level with the screens' titles. */
+  padding: 30px 0 14px;
+  border-right: 1.5px solid var(--frame);
+  background: var(--card);
+}
+
+.side-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 64px;
+  padding: 6px 0 4px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.side-item.draggable {
+  cursor: grab;
+}
+
+.side-item.draggable:active {
+  cursor: grabbing;
+}
+
+/* Each item's picture, straight on the grey strip. The picked tool gets a purple ring. */
+.side-tile {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 46px;
+  border-radius: 8px;
+}
+
+.side-item:focus-visible {
+  outline: none;
+}
+
+.side-item:focus-visible .side-tile {
+  box-shadow: 0 0 0 3px var(--accent-ring), 0 0 0 1px var(--accent);
+}
+
+.side-name {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* The pictures are drawn as small objects with light from above: a soft shadow underneath, which
+   grows on hover as if the object rose off the strip, ready to pick up. */
+.side-art {
+  display: block;
+  filter: drop-shadow(0 1px 0.5px rgb(0 0 0 / 0.12)) drop-shadow(0 2px 3px rgb(30 20 60 / 0.08));
+}
+
+/* Hover: a slightly deeper shadow, close underneath, tinted a touch toward the brand rather than
+   flat grey. */
+.side-item:hover .side-art {
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.1)) drop-shadow(0 3px 4px rgb(40 20 80 / 0.12));
+}
+
+/* The circle: a marker loop, its shadow falling just below the line. */
+.side-circle path {
+  fill: #1c1c1e;
+}
+
+svg.side-circle {
+  filter: drop-shadow(0 1.5px 1px rgb(0 0 0 / 0.2)) drop-shadow(0 3px 3px rgb(30 20 60 / 0.1));
+}
+
+.side-item:hover svg.side-circle {
+  filter: drop-shadow(0 1.5px 1px rgb(0 0 0 / 0.2)) drop-shadow(0 3px 4px rgb(40 20 80 / 0.14));
+}
+
+svg.side-art {
+  width: 31px;
+  height: 26px;
+  color: var(--text);
+}
+
+svg.side-circle {
+  width: 38px;
+  height: 28px;
+}
+
+/* A tiny sticky note: flat yellow with two lines of writing and its bottom-right corner curled
+   up, the curl and the writing in the same darker yellow. A hairline edge holds its shape on white. */
+.side-note {
+  position: relative;
+  width: 29px;
+  height: 29px;
+  border-radius: 4.5px 4.5px 10px 4.5px;
+  background: #ffe36e;
+  box-shadow: inset 0 0 0 1px rgb(150 110 0 / 0.12);
+}
+
+.side-note-line {
+  position: absolute;
+  left: 7px;
+  top: 9px;
+  width: 13px;
+  height: 2.75px;
+  border-radius: 2px;
+  background: #e9bf3a;
+}
+
+.side-note-line + .side-note-line {
+  top: 15px;
+  width: 9px;
+}
+
+.side-note-curl {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px 0 9px 0;
+  background: #f2c63a;
+}
+
+/* A tiny blur: a card whose content melts into pink and lilac haze, in a bold dashed selection. */
+svg.side-blur {
+  width: 38px;
+  height: 28px;
+}
+
+.side-blur-dashes {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.1;
+  stroke-dasharray: 4.5 3.5;
+  stroke-linecap: round;
+}
+
+/* A note being dragged from the sidebar. */
+.mark-ghost-note {
+  background: #ffec85;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.06), 0 8px 14px -6px rgb(0 0 0 / 0.35);
+}
+
+/* Zoom at the foot of the sidebar: the level, opening a menu beside it. */
+.side-zoom {
+  margin-top: auto;
+}
+
+.zoom-menu {
+  position: relative;
+}
+
+.zoom-level {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: 700 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.zoom-level:hover,
+.zoom-level[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+.zoom-level:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.zoom-popover {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 14px);
+  z-index: 30;
+  width: 220px;
+  padding: 6px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.06);
+}
+
+.zoom-field {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--text);
+  font: 700 13px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.zoom-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.zoom-rule {
+  height: 1.5px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+
+.zoom-popover button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: 700 13px/1 var(--font);
+  cursor: pointer;
+}
+
+.zoom-popover button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.zoom-popover button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.zoom-popover kbd {
+  color: var(--muted);
+  font: 700 12px/1 var(--font);
+}
+
+/* "Drag these onto a screen!", under the tools. */
+/* Lighter and plainer than the tools' names, so it reads as a hint rather than another label. */
+/* Under the tools: a handwritten note, tilted a little as if jotted in the margin, with a small
+   pen-drawn arrow rising from its top right and curving off toward the canvas. */
+.side-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 34px;
+}
+
+.side-caption {
+  width: 70px;
+  margin: 0;
+  color: var(--muted);
+  font: 700 15px/0.82 'Gaegu', cursive;
+  letter-spacing: -0.03em;
+  text-align: center;
+  transform: rotate(-4deg);
+}
+
+.side-hint-arrow {
+  align-self: flex-end;
+  width: 28px;
+  height: 24px;
+  margin-bottom: 1px;
+  overflow: visible;
+  /* Its start sits over the top right of the note, so its tip reaches a little past the panel's
+     edge onto the canvas. */
+  transform: translateX(16px);
+}
+
+.side-hint-arrow path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/*
+ * Delete buttons (a screen's trash, a note's ×, a blur's or circle's ×), in the canvas's own style:
+ * white with a 1.5px #DAD5D8 line and a plum icon, like the top bar's buttons, turning a soft red
+ * when hovered. A constant size on screen at any zoom, so they never shrink to a tiny target.
+ */
+:root {
+  --danger-soft: #fdeced;
+  --danger-line: #f2b9bc;
+  --danger-ink: #c62f36;
+}
+
+.note-delete,
+.mark-delete {
+  border: calc(1.5px / var(--zoom, 1)) solid var(--frame);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(30 20 60 / 0.08);
+}
+
+.note-delete {
+  --size: calc(20px / var(--zoom, 1));
+  top: calc(var(--size) / -2);
+  right: calc(var(--size) / -2);
+  width: var(--size);
+  height: var(--size);
+}
+
+.note-delete svg {
+  width: 60%;
+  height: 60%;
+}
+
+.note-delete:hover,
+.mark-delete:hover {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  box-shadow: 0 1px 0.5px rgb(0 0 0 / 0.08), 0 2px 5px rgb(120 20 30 / 0.12);
+}
+
+.note-delete:focus-visible,
+.mark-delete:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* Every screen deleted: a short message in the middle of the canvas, with Continue capture. */
+.flow-empty {
+  position: fixed;
+  inset: 60px 0 0 var(--sidebar);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.flow-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 340px;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.flow-empty-icon {
+  width: 132px;
+  height: 46px;
+  margin-bottom: 18px;
+  overflow: visible;
+}
+
+.flow-empty-icon .body {
+  fill: #fff9ff;
+  stroke: #3c3c3c;
+  stroke-width: 1;
+}
+
+.flow-empty-icon .head {
+  fill: #f5d3f4;
+}
+
+.flow-empty-icon .rule {
+  stroke: #3c3c3c;
+  stroke-width: 1;
+}
+
+.flow-empty-icon .ink {
+  fill: #3c3c3c;
+}
+
+.flow-empty-icon .cross {
+  fill: none;
+  stroke: #3c3c3c;
+  stroke-width: 0.85;
+}
+
+.flow-empty-icon .line {
+  fill: none;
+  stroke: #3c3c3c;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.flow-empty-icon .slot {
+  fill: none;
+  stroke: #9b9b9b;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  stroke-linecap: round;
+}
+
+.flow-empty-icon .plus {
+  stroke: #3c3c3c;
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+
+.flow-empty h2 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.flow-empty p {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* Continue capture, outlined like the top bar's buttons. */
+.flow-empty .continue-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1.5px solid var(--frame);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font: 700 13px/1 var(--font);
+  cursor: pointer;
+}
+
+.flow-empty .continue-button:hover {
+  background: var(--hover);
+}
+
+.flow-empty .continue-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.flow-empty .continue .toast {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* No screens left: the tools and their hint are shown switched off until there's a screen again. */
+.sidebar.disabled .side-item,
+.sidebar.disabled .side-hint {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.sidebar.disabled .side-item {
+  cursor: not-allowed;
+}
+
+/* A page the user wrote between two screens: a pale plum card with a label, a headline and text. */
+.screens li.text-page {
+  flex-basis: 440px;
+  /* Never wider than this, however long a line of text: it wraps instead. */
+  min-width: 0;
+  max-width: 440px;
+  transition:
+    opacity 200ms ease-out,
+    flex-basis 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    margin-right 300ms 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Just added: it opens up from nothing, easing the screens after it over. Not when the canvas loads. */
+.screens li.text-page.added {
+  @starting-style {
+    flex-basis: 0;
+    opacity: 0;
+  }
+}
+
+/* Its outline dashed, to set it apart from a captured screen. */
+.screens li.text-page .card::after {
+  border-style: dashed;
+}
+
+.text-page-body {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+  padding: 28px 28px 22px;
+  border-radius: inherit;
+  background: #faf5f8;
+}
+
+/* The page's icon: large, straight on the card at its top left. */
+.text-page-icon {
+  display: block;
+  align-self: flex-start;
+  margin: -4px 0 14px -4px;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* Hovered: the same light grey as the flow's and screens' names, which are also clicked to change. */
+.text-page-icon:hover {
+  background: rgb(127 127 127 / 0.12);
+}
+
+.text-page-icon:focus {
+  outline: none;
+}
+
+.text-page-icon:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.text-page-icon svg {
+  display: block;
+  width: 44px;
+  height: 44px;
+}
+
+.text-page-icon svg,
+.text-page-icons svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.text-page-heading,
+.text-page-text {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  outline: none;
+}
+
+.text-page-heading {
+  flex: none;
+  /* At most three lines; typing more isn't kept (see TextPageCard). */
+  max-height: 3lh;
+  overflow: hidden;
+  margin-bottom: 8px;
+  font: 700 24px/1.25 var(--font);
+  resize: none;
+  field-sizing: content;
+}
+
+.text-page-text {
+  flex: 1 1 auto;
+  min-height: 3lh;
+  /* At most seven lines; typing more isn't kept (see TextPageCard). */
+  max-height: 7lh;
+  overflow: hidden;
+  font: 500 17px/1.5 var(--font);
+  resize: none;
+  field-sizing: content;
+}
+
+.text-page-heading::placeholder,
+.text-page-text::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/*
+ * The quick icons: a white pill along the bottom of the page, like a sticky note's colours, shown
+ * while the page is selected. Its room is kept when hidden, so the page doesn't change size.
+ */
+/* Near the text's limit: how many characters are left, in the card's bottom-right corner. */
+.text-page-count {
+  position: absolute;
+  right: 28px;
+  bottom: 30px;
+  color: var(--muted);
+  font: 500 13px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.text-page-icons {
+  align-self: flex-start;
+  margin-top: 16px;
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 12px;
+  background: #ffffff;
+  /* A light lift: a hairline edge and a soft, short shadow. */
+  box-shadow: 0 0 0 1px rgb(51 0 45 / 0.08), 0 2px 6px rgb(30 20 60 / 0.07);
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+}
+
+.text-page:focus-within .text-page-icons {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.text-page-icons button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 120ms ease-out, color 120ms;
+}
+
+.text-page-icons svg {
+  width: 20px;
+  height: 20px;
+}
+
+.text-page-icons button:hover {
+  color: var(--text);
+  transform: scale(1.08);
+}
+
+.text-page-icons button[aria-checked='true'] {
+  color: var(--accent);
+  background: #f6edf3;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 3.5px var(--accent);
+}
+
+.text-page-icons button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-page-icons {
+    transition: none;
+  }
+}
+
+/*
+ * The gap after a screen. Hovering anywhere in it shows a thin purple line down the gap where a new
+ * page would go, then a beat later a small round + on the line, partway down and clear of the
+ * trash button on the screen's corner. Hovering the + fades the arrow across the gap.
+ *
+ * The hover area sits under the arrows' click layer, so an arrow crossing the gap can still be
+ * clicked and dragged. The line and + are drawn above the arrows.
+ */
+.insert-page {
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  right: calc(-1 * var(--gap));
+  bottom: 0;
+  width: var(--gap);
+}
+
+.insert-hover {
+  pointer-events: auto;
+  position: absolute;
+  inset: 40px 0 0;
+  z-index: 0;
+}
+
+.insert-line {
+  position: absolute;
+  top: var(--line-top, 40px);
+  /* As tall as the shorter of the two cards beside it. */
+  height: var(--line-height, auto);
+  bottom: auto;
+  left: 50%;
+  z-index: 6;
+  width: calc(1.5px / var(--zoom, 1));
+  margin-left: calc(-0.75px / var(--zoom, 1));
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.insert-page button {
+  --size: calc(22px / var(--zoom, 1));
+  pointer-events: auto;
+  position: absolute;
+  /* Halfway down, but never far below the top, so it's in view even beside a tall screen. */
+  /* Placed by the canvas, clear of the arrow (see InsertPage); halfway down until then. */
+  top: calc(var(--plus-y, clamp(150px, 50%, 300px)) - var(--size) / 2);
+  left: calc(50% - var(--size) / 2);
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  /* A solid purple marker on the line, the line and + reading as one. */
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  /* Hidden: not clickable either, so it can't be hit by accident while unseen. */
+  visibility: hidden;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out,
+    visibility 0s 120ms,
+    background 120ms;
+}
+
+.insert-page button svg {
+  width: 60%;
+  height: 60%;
+}
+
+/*
+ * Resting in the gap for a moment (not just passing over it, or scrolling past): the line and +
+ * appear together. Leaving hides them at once.
+ */
+.insert-page:hover .insert-line,
+.insert-page:has(button:focus-visible) .insert-line {
+  opacity: 0.55;
+  transition: opacity 120ms ease-out 150ms;
+}
+
+.insert-page:hover button,
+.insert-page button:focus-visible {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 120ms ease-out 150ms,
+    transform 120ms ease-out 150ms,
+    visibility 0s,
+    background 120ms;
+}
+
+.insert-page button:hover {
+  background: var(--accent-hover);
+}
+
+.insert-page button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* While the canvas is scrolling, the gaps don't respond at all. */
+.screens[data-scrolling] .insert-hover {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .insert-line,
+  .insert-page button {
+    transition: none;
+  }
+
+  /* No fade, but still the same pause before they show. */
+  .insert-page:hover .insert-line {
+    transition: opacity 0s 150ms;
+  }
+
+  .insert-page:hover button {
+    transition: opacity 0s 150ms, transform 0s 150ms, visibility 0s;
+  }
+}
+
+/* The arrow across a gap where a page is about to be added, faded so the line and + lead. */
+.arrows g.dim {
+  opacity: 0.3;
+  transition: opacity 140ms ease-out;
+}

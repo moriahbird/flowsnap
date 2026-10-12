@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- FlowSnap's icon drawn pixel by pixel for the 16 pixel toolbar size. Corners are rounded
+       by leaving out the corner pixel, so every edge stays sharp. -->
+
+  <path d="M1 0H9V1H10V7H9V8H1V7H0V1H1Z" fill="#94349A"/>
+  <rect x="1" y="3" width="8" height="4" fill="#FFFFFF"/>
+
+  <path d="M7 9H15V10H16V15H15V16H7V15H6V10H7Z" fill="#B86B25"/>
+  <rect x="7" y="12" width="8" height="3" fill="#FFF5EC"/>
+
+  <rect x="2" y="3" width="3" height="4" fill="#33002D"/>
+  <rect x="5" y="4" width="8" height="2" fill="#33002D"/>
+  <rect x="11" y="6" width="2" height="2" fill="#33002D"/>
+  <rect x="9" y="8" width="6" height="1" fill="#33002D"/>
+  <rect x="10" y="9" width="4" height="1" fill="#33002D"/>
+  <rect x="11" y="10" width="2" height="1" fill="#33002D"/>
+</svg>

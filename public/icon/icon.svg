@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- FlowSnap's icon: a click in one window leads, by an elbow arrow, to the next window.
+       Drawn on a 32 grid with whole-pixel edges so it renders crisp at 32 and 128 (4x).
+       Rendered to 32 and 128 pixels. 16 and 48 use icon-16.svg and icon-48.svg. -->
+
+  <!-- First window. -->
+  <rect x="0" y="1" width="20" height="14" rx="3" fill="#94349A"/>
+  <rect x="2" y="5" width="16" height="8" rx="1" fill="#FFFFFF"/>
+  <rect x="3" y="2" width="2" height="2" rx="0.5" fill="#FFFFFF"/>
+  <rect x="6" y="2" width="2" height="2" rx="0.5" fill="#FFFFFF"/>
+  <rect x="9" y="2" width="2" height="2" rx="0.5" fill="#FFFFFF"/>
+
+  <!-- Second window. -->
+  <rect x="12" y="17" width="20" height="14" rx="3" fill="#B86B25"/>
+  <rect x="14" y="21" width="16" height="8" rx="1" fill="#FFF5EC"/>
+  <rect x="15" y="18" width="2" height="2" rx="0.5" fill="#FFF5EC"/>
+  <rect x="18" y="18" width="2" height="2" rx="0.5" fill="#FFF5EC"/>
+  <rect x="21" y="18" width="2" height="2" rx="0.5" fill="#FFF5EC"/>
+
+  <!-- The click and the arrow to the next window. -->
+  <path d="M6 8H26V15H24V10H6Z" fill="#33002D"/>
+  <path d="M21 15H29L25 19Z" fill="#33002D"/>
+  <circle cx="6" cy="9" r="3" fill="#33002D"/>
+</svg>
