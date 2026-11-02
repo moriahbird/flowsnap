@@ -32,8 +32,12 @@ const RECORDER_ID = 'flowsnap-recorder';
 /** Chrome allows 2 captureVisibleTab calls per second. Stay just under it. */
 const MIN_CAPTURE_GAP_MS = 510;
 const DEFAULT_TITLE = 'FlowSnap: click to start recording';
+/** Opened by Chrome after the extension is removed. Carries no user data. */
+const UNINSTALL_URL = 'https://flowsnap.dev/uninstall';
 
 export default defineBackground(() => {
+  void browser.runtime.setUninstallURL(UNINSTALL_URL);
+
   browser.action.onClicked.addListener((tab) => {
     // Ask for website access first, while Chrome still treats this as a user click.
     // If access was already granted, this resolves straight away with no prompt.

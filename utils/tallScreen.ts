@@ -7,7 +7,9 @@ import type { Gap, ViewInfo } from '@/utils/messages';
  * they looked at becomes one tall screen.
  *
  * Sticky headers appear once, at the top: each new part starts below the header. A fixed footer
- * is left off until the bottom of the page is reached, so it doesn't repeat down the image.
+ * is left off until the bottom of the page is reached, so it doesn't repeat down the image. On a
+ * page that scrolls an inner panel beside a sidebar that stays put (like Gemini), new parts take
+ * just the panel, and beside them is the sidebar's background, so the sidebar shows once.
  */
 
 /**
@@ -75,9 +77,11 @@ export async function addToScreen(
       old.close();
     }
     const fitWidth = width / shot.width;
+    const col = scrollingColumn(shot, view, ratio);
+    fillBeside(ctx, shot, col, fitWidth, 0, shift);
     const sourceY = (newTop - view.scrollY) * ratio;
     const sourceH = (end - newTop) * ratio;
-    ctx.drawImage(shot, 0, sourceY, shot.width, sourceH, 0, 0, width, sourceH * fitWidth);
+    drawColumn(ctx, shot, col, fitWidth, sourceY, sourceH, 0);
     return { canvas, height, footer: oldFooter, bottom, top: newTop };
   }
 
@@ -121,9 +125,13 @@ export async function addToScreen(
   // The new part, from the screenshot to its place on the page. The window may have been
   // resized since, so it's fitted to the screen's width.
   const fitWidth = width / shot.width;
+  const col = scrollingColumn(shot, view, ratio);
+  // Beside the new rows (including any skipped by scrolling too fast), the sidebar's background.
+  const oldHeight = Math.round((bottom - top) * ratio);
+  if (height > oldHeight) fillBeside(ctx, shot, col, fitWidth, oldHeight, height - oldHeight);
   const sourceY = (start - view.scrollY) * ratio;
   const sourceH = (end - start) * ratio;
-  ctx.drawImage(shot, 0, sourceY, shot.width, sourceH, 0, (start - top) * ratio, width, sourceH * fitWidth);
+  drawColumn(ctx, shot, col, fitWidth, sourceY, sourceH, (start - top) * ratio);
 
   return { canvas, height, footer, bottom: newBottom, top };
 }
@@ -170,9 +178,90 @@ export async function fillGaps(
     old.close();
   }
   const fitWidth = width / shot.width;
+  const col = scrollingColumn(shot, view, ratio);
   for (const d of draws) {
     const sourceH = (d.to - d.from) * ratio;
-    ctx.drawImage(shot, 0, (d.from - view.scrollY) * ratio, shot.width, sourceH, 0, (d.from - top) * ratio, width, sourceH * fitWidth);
+    drawColumn(ctx, shot, col, fitWidth, (d.from - view.scrollY) * ratio, sourceH, (d.from - top) * ratio);
   }
   return { canvas, gaps: remaining };
+}
+
+/** Across a screenshot, the part that scrolls, in its pixels: from `x`, `width` wide. */
+interface Column {
+  x: number;
+  width: number;
+}
+
+/**
+ * The part of a screenshot that scrolls: all of it, or on a page that scrolls an inner panel
+ * beside a sidebar, just that panel.
+ */
+function scrollingColumn(shot: ImageBitmap, view: ViewInfo, ratio: number): Column {
+  const left = Math.round((view.left ?? 0) * ratio);
+  const right = Math.round((view.right ?? 0) * ratio);
+  const width = shot.width - left - right;
+  // Not a narrow sliver of the window: that's not a page's main panel.
+  return width >= shot.width * 0.3 ? { x: left, width } : { x: 0, width: shot.width };
+}
+
+/** Draw a band of the screenshot's scrolling part onto the screen, fitted to the screen's width. */
+function drawColumn(
+  ctx: OffscreenCanvasRenderingContext2D,
+  shot: ImageBitmap,
+  col: Column,
+  fitWidth: number,
+  sourceY: number,
+  sourceH: number,
+  destY: number,
+) {
+  ctx.drawImage(shot, col.x, sourceY, col.width, sourceH, col.x * fitWidth, destY, col.width * fitWidth, sourceH * fitWidth);
+}
+
+/**
+ * Paint the sidebars' background beside rows of the screen (the most common colour in each, so a
+ * sidebar's own background rather than its text and icons). Nothing to do on a page without them.
+ */
+function fillBeside(
+  ctx: OffscreenCanvasRenderingContext2D,
+  shot: ImageBitmap,
+  col: Column,
+  fitWidth: number,
+  destY: number,
+  destH: number,
+) {
+  if (destH <= 0) return;
+  const sides = [
+    { x: 0, width: col.x },
+    { x: col.x + col.width, width: shot.width - col.x - col.width },
+  ];
+  for (const side of sides) {
+    if (side.width < 1) continue;
+    ctx.fillStyle = commonColor(shot, side);
+    ctx.fillRect(side.x * fitWidth, destY, side.width * fitWidth, destH);
+  }
+}
+
+/** The colour that covers most of a strip of the screenshot, sampled on a coarse grid. */
+function commonColor(shot: ImageBitmap, strip: Column) {
+  const cols = 12;
+  const rows = 48;
+  const grid = new OffscreenCanvas(cols, rows);
+  const g = grid.getContext('2d')!;
+  // Nearest pixel, not blended: each sample is a real colour from the screenshot.
+  g.imageSmoothingEnabled = false;
+  g.drawImage(shot, strip.x, 0, strip.width, shot.height, 0, 0, cols, rows);
+  const data = g.getImageData(0, 0, cols, rows).data;
+  const counts = new Map<number, number>();
+  let best = 0;
+  let bestCount = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const rgb = (data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!;
+    const n = (counts.get(rgb) ?? 0) + 1;
+    counts.set(rgb, n);
+    if (n > bestCount) {
+      best = rgb;
+      bestCount = n;
+    }
+  }
+  return `#${best.toString(16).padStart(6, '0')}`;
 }

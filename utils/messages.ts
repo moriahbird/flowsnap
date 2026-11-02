@@ -88,6 +88,13 @@ export interface ViewInfo {
   footer: number;
   /** Scrolled all the way to the bottom of the page. */
   atBottom: boolean;
+  /**
+   * On a page that scrolls an inner panel, how much of the window is beside it on the left and
+   * right (a sidebar that stays put, like Gemini's). Added parts of a tall screen take only the
+   * panel, so the sidebar isn't repeated down the screen. 0 or missing if none.
+   */
+  left?: number;
+  right?: number;
 }
 
 /**

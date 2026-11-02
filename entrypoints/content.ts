@@ -42,6 +42,12 @@ const ALIVE_CHECK_MS = 1000;
 function keepOnTop(host: HTMLElement) {
   host.popover = 'manual';
   const raise = () => {
+    // Removed because a newer copy of FlowSnap (after the extension was reloaded) put its own
+    // panel on the page. Putting this one back would leave a panel nothing hides for screenshots.
+    if (!host.isConnected && [...document.querySelectorAll('flowsnap-panel')].some((el) => el !== host)) {
+      stop();
+      return;
+    }
     // Inside the topmost modal dialog if there is one, so it stays clickable.
     const modals = document.querySelectorAll('dialog:modal');
     const parent = modals[modals.length - 1] ?? document.documentElement;
@@ -73,11 +79,12 @@ function keepOnTop(host: HTMLElement) {
     }
   });
   observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] });
-  return () => {
+  function stop() {
     document.removeEventListener('toggle', onToggle, true);
     observer.disconnect();
     if (host.matches(':popover-open')) host.hidePopover();
-  };
+  }
+  return stop;
 }
 
 /** Capture the next part of a tall screen once the user has stopped scrolling for this long. */
@@ -98,16 +105,12 @@ const SLICE_MIN_NEW = 40;
  * skip a part, which shows as a white gap.
  */
 const SLICE_EARLY = 0.5;
-/** After the user stops scrolling this long, skipped parts of the screen are filled in. */
-const FILL_AFTER_MS = 700;
 /** Filling in: at most this many parts at a time, waiting this long after each scroll for the page to settle. */
 const FILL_MAX_PARTS = 12;
 const FILL_SCROLL_SETTLE_MS = 120;
 /** Filling in: how long to wait for each part to be captured, and for the screen's gaps to update after it. */
 const FILL_PART_MAX_MS = 3000;
 const FILL_GAPS_WAIT_MS = 1500;
-const FILL_NOTE = 'Filling in parts of the page that were skipped…';
-const FILL_LEFT_NOTE = 'Part of the page was skipped. Scroll back over it to fill it in.';
 
 /** A part thrown away because the page moved is asked for again at most this many times in a row. */
 const SLICE_RETRIES = 3;
@@ -288,6 +291,7 @@ function record(ctx: ContentScriptContext, screenCount: number, ownScreenPending
   const newScreen = () => {
     screenKey = crypto.randomUUID();
     lastNewScreenAt = Date.now();
+    showMissed();
     send({ type: 'capture-request' });
   };
   // The screen showing finished filling in (a reply streamed in, a skeleton loaded). Same screen,
@@ -296,6 +300,7 @@ function record(ctx: ContentScriptContext, screenCount: number, ownScreenPending
 
   const panel = createPanel({
     onFinish: () => send({ type: 'finish' }),
+    onFillMissed: () => void fillGapsNow(),
     onCaptureExtra: () => {
       detector.reset();
       newScreen();
@@ -406,25 +411,46 @@ function record(ctx: ContentScriptContext, screenCount: number, ownScreenPending
     }, INNER_SCROLL_SETTLE_MS);
   };
   /*
-   * Parts skipped by scrolling too fast are filled in automatically: once the user stops, the page
-   * is scrolled to each skipped part, it's captured, and the page goes back to where they were. A
-   * scroll, click or key from the user stops it at once, leaving them where they are.
+   * Parts skipped by scrolling too fast are marked with a dot on the panel's screen count, which
+   * says what happened once by itself and again on hover, until they're filled in. Its button fills
+   * them in for the user: the page is scrolled to each skipped part, it's captured, and the page
+   * goes back to where they were. A scroll, click or key from the user stops it at once, leaving
+   * them where they are.
    */
   let filling = false;
-  let fillTimer: ReturnType<typeof setTimeout> | undefined;
   let captureDone: (() => void) | undefined;
   let gapsArrived: (() => void) | undefined;
+  /** Couldn't be filled in by scrolling to them (under a pinned header, say). */
+  let missedStuck = false;
+  /** The skipped parts last pointed out by themselves, so it's only said again for new ones. */
+  let missedSaid: string | undefined;
+  const missedNow = () => (gaps?.screenKey === screenKey ? gaps.list : []);
+  const showMissed = () => {
+    const list = missedNow();
+    if (filling) {
+      panel.setMissed('filling');
+      return;
+    }
+    if (!list.length) {
+      missedStuck = false;
+      panel.setMissed(null);
+      return;
+    }
+    const said = `${screenKey}:${list.length}:${missedStuck}`;
+    panel.setMissed(missedStuck ? 'stuck' : 'missed', said !== missedSaid);
+    missedSaid = said;
+  };
   const fillGapsNow = async () => {
     const key = screenKey;
     const missing = () => (gaps?.screenKey === key ? gaps.list : []);
     if (filling || sliceAsked || !missing().length) return;
     filling = true;
+    panel.setMissed('filling');
     const home = scrollPosition();
     let interrupted = false;
     const stop = () => (interrupted = true);
     const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
     for (const type of events) window.addEventListener(type, stop, { capture: true, passive: true });
-    panel.showNote(FILL_NOTE, true);
     for (let i = 0; i < FILL_MAX_PARTS && !interrupted && screenKey === key; i++) {
       const next = [...missing()].sort((a, b) => a.from - b.from)[0];
       if (!next) break;
@@ -439,15 +465,18 @@ function record(ctx: ContentScriptContext, screenCount: number, ownScreenPending
       await Promise.race([updated, sleep(FILL_GAPS_WAIT_MS)]);
       // Nothing of it could be filled (it's under a pinned header, say): don't try it again.
       const still = missing().find((g) => g.from === next.from && g.to === next.to);
-      if (still) break;
+      if (still) {
+        missedStuck = true;
+        break;
+      }
     }
     for (const type of events) window.removeEventListener(type, stop, { capture: true });
     if (!interrupted) scrollToPosition(home);
     // Let the scroll back settle before the page's own scroll handling resumes.
     await sleep(FILL_SCROLL_SETTLE_MS);
     filling = false;
-    if (missing().length) panel.showNote(FILL_LEFT_NOTE);
-    else panel.hideNote();
+    if (!interrupted && !missing().length) panel.setMissed('done');
+    else showMissed();
   };
 
   // When the user last scrolled, so the page scrolling itself can be told apart.
@@ -488,8 +517,6 @@ function record(ctx: ContentScriptContext, screenCount: number, ownScreenPending
       lastPageScrollAt = Date.now();
       return;
     }
-    clearTimeout(fillTimer);
-    fillTimer = setTimeout(() => void fillGapsNow(), FILL_AFTER_MS);
     const el = e.target;
     if (el instanceof Element && el !== document.scrollingElement && el !== pageScroller()) onInnerScroll(el);
     lastPageScrollAt = Date.now();
@@ -578,6 +605,7 @@ function record(ctx: ContentScriptContext, screenCount: number, ownScreenPending
         gaps = { screenKey: msg.screenKey, list: msg.gaps };
         gapsArrived?.();
         gapsArrived = undefined;
+        showMissed();
         break;
       case 'status':
         shownCount = msg.screenCount;
@@ -653,8 +681,9 @@ function hidePinned(ignore: Element) {
       if (position === 'sticky' && !stuckVertically(el, r)) continue;
       // A bar across the top or bottom: kept, as tall screens already show it just once.
       if (r.width >= width * 0.5 && r.height <= height * 0.4 && (r.top <= 1 || r.bottom >= height - 1)) continue;
-      // Covering most of the window: some sites hold their whole page in one. Never hidden.
-      if (r.width >= width * 0.9 && r.height >= height * 0.9) continue;
+      // Covering most of the window: some sites hold their whole page in one, so it's kept, unless
+      // it's a see-through layer that only floats things (a menu, buttons) over the page.
+      if (r.width >= width * 0.9 && r.height >= height * 0.9 && !floatingLayer(el)) continue;
       hidden.push({ el, before: props.map((p) => [el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]) });
       for (const p of props) el.style.setProperty(p, values[p], 'important');
       // Everything inside it is hidden with it.
@@ -675,6 +704,34 @@ function hidePinned(ignore: Element) {
   };
   const safety = setTimeout(show, 3000);
   return show;
+}
+
+/**
+ * Whether something pinned over the whole window is only a layer that floats things over the page,
+ * like Delta Cafés' menu bar: clear, letting clicks through to the page, and not holding the part
+ * of the page that scrolls. A layer that holds the page itself, or is a fixed background (a color,
+ * an image or a video filling the window), is not one.
+ */
+function floatingLayer(el: HTMLElement) {
+  const style = getComputedStyle(el);
+  if (style.pointerEvents !== 'none') return false;
+  if (style.backgroundImage !== 'none' || !transparent(style.backgroundColor)) return false;
+  const scroller = pageScroller();
+  if (scroller && scroller !== document.scrollingElement && el.contains(scroller)) return false;
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  for (const media of el.querySelectorAll('img, video, canvas')) {
+    const r = media.getBoundingClientRect();
+    if (r.width >= width * 0.9 && r.height >= height * 0.9) return false;
+  }
+  return true;
+}
+
+function transparent(color: string) {
+  if (color === 'transparent') return true;
+  // The last number of rgba(…) or color(… / a) is how see-through it is.
+  const alpha = color.match(/[,/]\s*([\d.]+)\s*\)$/);
+  return !!alpha && parseFloat(alpha[1]!) === 0;
 }
 
 /**
@@ -706,17 +763,25 @@ function lastDescendant(el: Element): Element {
   return last;
 }
 
+/** Space beside an inner panel that scrolls the page counts as a sidebar from this wide, in CSS pixels. */
+const SIDE_MIN = 24;
+
 function viewInfo(ignore: Element): ViewInfo {
   const width = window.innerWidth;
   const height = window.innerHeight;
   const scroller = pageScroller();
   let header = 0;
   let footer = 0;
-  // An inner panel that scrolls: whatever's above or below it in the window stays put.
+  let left = 0;
+  let right = 0;
+  // An inner panel that scrolls: whatever's above or below it in the window stays put, and so does
+  // whatever's beside it (a sidebar).
   if (scroller && scroller !== document.scrollingElement) {
     const r = scroller.getBoundingClientRect();
     header = Math.max(0, r.top);
     footer = Math.max(0, height - r.bottom);
+    if (r.left >= SIDE_MIN) left = r.left;
+    if (width - r.right >= SIDE_MIN) right = width - r.right;
   }
   const pinned = (x: number, y: number) => {
     const found = new Set<Element>();
@@ -746,6 +811,8 @@ function viewInfo(ignore: Element): ViewInfo {
     header: Math.round(header),
     footer: Math.round(footer),
     atBottom,
+    left: Math.round(left),
+    right: Math.round(right),
   };
 }
 
@@ -887,15 +954,24 @@ function send(msg: ToBackground) {
   }
 }
 
-/** Wait until the page has painted without the panel, so it can't appear in the screenshot. */
+/**
+ * Wait until the page has painted without the panel, so it can't appear in the screenshot.
+ *
+ * Two animation frames mean a frame without it has been drawn. A busy page (like Gemini, while it
+ * loads) can take well over 200ms to draw one, so the wait isn't cut short while the tab is in
+ * front. Animation frames pause in background tabs, so there it doesn't wait for them.
+ */
 function waitForRepaint() {
+  if (document.visibilityState !== 'visible') return sleep(REPAINT_HIDDEN_MS);
   const frames = new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 30))),
   );
-  // Animation frames pause in background tabs. Don't wait forever.
-  const fallback = new Promise<void>((resolve) => setTimeout(resolve, 200));
-  return Promise.race([frames, fallback]);
+  // Only so a page that never draws again can't hold up recording forever.
+  return Promise.race([frames, sleep(REPAINT_MAX_MS)]);
 }
+/** How long to wait for the page to draw without the panel: in a background tab, and at most. */
+const REPAINT_HIDDEN_MS = 200;
+const REPAINT_MAX_MS = 1500;
 
 /** Space kept between the panel and the window's edges, in CSS pixels. */
 const PANEL_MARGIN = 16;
@@ -910,10 +986,13 @@ function removeOtherPanels(keep?: Element) {
   for (const el of document.querySelectorAll('flowsnap-panel')) if (el !== keep) el.remove();
 }
 
+type MissedState = 'missed' | 'filling' | 'stuck' | 'done';
+
 /** The recording panel: status, screen count and buttons. Isolated from the site's styles. */
 function createPanel(options: {
   onFinish: () => void;
   onCaptureExtra: () => void;
+  onFillMissed: () => void;
 }) {
   removeOtherPanels();
   const host = document.createElement('flowsnap-panel');
@@ -973,12 +1052,79 @@ function createPanel(options: {
       }
       .below .note { bottom: auto; top: calc(100% + 8px); }
       .note[hidden] { display: none; }
+      /* Parts of the page skipped by scrolling too fast: a dot on the screen count, and a card about it. */
+      .count { position: relative; }
+      .count.has-missed { cursor: pointer; }
+      .mark {
+        position: absolute; top: -4px; right: -9px; box-sizing: border-box; width: 8px; height: 8px;
+        border-radius: 50%; background: #D98E1F; border: 1.5px solid #F4F3F1;
+      }
+      .mark[hidden] { display: none; }
+      .mark.busy { border: 1.5px solid #D98E1F; border-right-color: transparent; background: transparent; animation: spin 0.8s linear infinite; }
+      .mark.ok { background: #3E8E5E; }
+      .missed {
+        position: absolute; right: 0; bottom: calc(100% + 10px); overflow: hidden;
+        box-sizing: border-box; height: 42px;
+        display: flex; align-items: center; gap: 9px; padding: 0 6px 0 12px;
+        background: #FFFFFF; color: var(--ink); border: 1.5px solid var(--line); border-radius: 12px;
+        box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+        font: 700 12.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        white-space: nowrap; animation: rise 0.16s ease-out;
+      }
+      .missed[hidden] { display: none; }
+      .below .missed { bottom: auto; top: calc(100% + 10px); }
+      @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+      .missed-icon { position: relative; flex: none; width: 18px; height: 18px; color: var(--accent); }
+      .missed-icon svg { position: absolute; inset: 0; width: 18px; height: 18px; }
+      .missed-title { position: relative; margin-right: 2px; }
+      .missed:not(:has(.go:not([hidden]))) .missed-title { margin-right: 8px; }
+      .missed .go { height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--accent); background: transparent; }
+      .missed .go:hover { color: var(--accent-hover); background: rgb(138 59 120 / 0.08); }
+      .missed [hidden] { display: none; }
+      /* Capturing: the whole card is the animation. A plum wash sweeps across it, a line scans the
+         icon, and the words shimmer. */
+      .missed.filling { border-color: #D9BED0; }
+      .missed.filling::before {
+        content: ""; position: absolute; inset: 0; width: 45%;
+        background: linear-gradient(90deg, transparent, rgb(138 59 120 / 0.14), transparent);
+        animation: wash 1.3s ease-in-out infinite;
+      }
+      .filling .missed-icon::after {
+        content: ""; position: absolute; left: 4px; right: 4px; height: 1.5px; top: 4px; border-radius: 1px;
+        background: var(--accent); animation: scan 0.9s ease-in-out infinite alternate;
+      }
+      .filling .missed-title {
+        color: transparent; background: linear-gradient(90deg, var(--ink) 30%, #C9A3BF 50%, var(--ink) 70%);
+        background-size: 250% 100%; -webkit-background-clip: text; background-clip: text;
+        animation: shimmer 1.3s linear infinite;
+      }
+      .done .missed-icon { color: #3E8E5E; }
+      @keyframes wash { from { transform: translateX(-100%); } to { transform: translateX(240%); } }
+      @keyframes scan { to { top: 12.5px; } }
+      @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .mark.busy, .missed, .missed.filling::before, .filling .missed-icon::after, .filling .missed-title { animation: none; }
+        .filling .missed-title { color: var(--ink); background: none; }
+      }
     </style>
     <div class="wrap">
     <div class="note" hidden></div>
+    <div class="missed" role="status" hidden>
+      <span class="missed-icon" aria-hidden="true">
+        <svg class="frame" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6V3.5A1.5 1.5 0 0 1 3.5 2H6M12 2h2.5A1.5 1.5 0 0 1 16 3.5V6M16 12v2.5a1.5 1.5 0 0 1-1.5 1.5H12M6 16H3.5A1.5 1.5 0 0 1 2 14.5V12" />
+        </svg>
+        <svg class="check" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden>
+          <path d="M3.5 9.5l3.5 3.5 7.5-8" />
+        </svg>
+      </span>
+      <span class="missed-title"></span>
+      <button type="button" class="go">Capture it</button>
+    </div>
     <div class="panel">
       <span class="status"><span class="dot"></span>Rec</span>
-      <span class="count"></span>
+      <span class="count"><span class="count-text"></span><span class="mark" hidden></span></span>
       <button type="button" class="capture">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M5 7h1a2 2 0 0 0 2-2a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2" />
@@ -1002,10 +1148,67 @@ function createPanel(options: {
   const wrap = root.querySelector<HTMLElement>('.wrap')!;
   const box = root.querySelector<HTMLElement>('.panel')!;
   const count = root.querySelector<HTMLElement>('.count')!;
+  const countText = root.querySelector<HTMLElement>('.count-text')!;
   const note = root.querySelector<HTMLElement>('.note')!;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   root.querySelector('.stop')!.addEventListener('click', options.onFinish);
   root.querySelector('.capture')!.addEventListener('click', options.onCaptureExtra);
+  // Parts of the page skipped by scrolling too fast. The card about them shows by itself for a few
+  // seconds when they're skipped, then while the dot or the card is hovered, or after the dot is
+  // clicked (for touch screens), and the whole time FlowSnap is capturing them.
+  const missed = {
+    card: root.querySelector<HTMLElement>('.missed')!,
+    frame: root.querySelector<SVGElement>('.frame')!,
+    check: root.querySelector<SVGElement>('.check')!,
+    title: root.querySelector<HTMLElement>('.missed-title')!,
+    go: root.querySelector<HTMLElement>('.go')!,
+    mark: root.querySelector<HTMLElement>('.mark')!,
+  };
+  let missedState: MissedState | null = null;
+  let peeking = false;
+  let hovering = false;
+  let pinned = false;
+  let peekTimer: ReturnType<typeof setTimeout> | undefined;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  let doneTimer: ReturnType<typeof setTimeout> | undefined;
+  const showMissedCard = () => {
+    const open = !!missedState && (peeking || hovering || pinned || missedState === 'filling' || missedState === 'done');
+    const wasHidden = missed.card.hidden;
+    missed.card.hidden = !open;
+    if (open && wasHidden) {
+      // Restarts its entrance.
+      missed.card.style.animation = 'none';
+      void missed.card.offsetWidth;
+      missed.card.style.animation = '';
+    }
+  };
+  const onHover = (on: boolean) => {
+    clearTimeout(hoverTimer);
+    if (on) {
+      hovering = true;
+      showMissedCard();
+    } else {
+      hoverTimer = setTimeout(() => {
+        hovering = false;
+        showMissedCard();
+      }, 250);
+    }
+  };
+  for (const el of [count, missed.card]) {
+    el.addEventListener('mouseenter', () => missedState && onHover(true));
+    el.addEventListener('mouseleave', () => onHover(false));
+  }
+  count.addEventListener('click', () => {
+    if (!missedState || missedState === 'filling') return;
+    pinned = !pinned;
+    peeking = false;
+    showMissedCard();
+  });
+  missed.go.addEventListener('click', () => {
+    pinned = false;
+    peeking = false;
+    options.onFillMissed();
+  });
   const place = placePanel(host, wrap, root.querySelector<HTMLElement>('.brand')!);
 
   // In a window narrower than the panel (like a sign-in popup), shrink it to fit.
@@ -1028,7 +1231,7 @@ function createPanel(options: {
       // The number a little bolder than the word after it.
       const number = document.createElement('b');
       number.textContent = String(n);
-      count.replaceChildren(number, ` ${n === 1 ? 'screen' : 'screens'}`);
+      countText.replaceChildren(number, ` ${n === 1 ? 'screen' : 'screens'}`);
     },
     /**
      * Hide the panel for a screenshot. Instant, so it's gone for as short a time as possible.
@@ -1054,6 +1257,63 @@ function createPanel(options: {
     hideNote() {
       clearTimeout(noteTimer);
       note.hidden = true;
+    },
+    /**
+     * Parts of the page skipped by scrolling too fast: 'missed' offers to capture them, 'filling'
+     * while FlowSnap scrolls to them itself (scrolling, clicking or a key stops it), 'stuck' when
+     * that didn't fill them in, 'done' once they're all in (shown for a moment), and null clears
+     * it. `say` shows the card by itself for a few seconds, for parts just skipped.
+     */
+    setMissed(state: MissedState | null, say = false) {
+      // "Captured" stays up for its moment, even if the page reports nothing missing meanwhile.
+      if (state === null && missedState === 'done') return;
+      clearTimeout(doneTimer);
+      // Capturing keeps the card the width it was, so it doesn't jump as the words change.
+      if (state === 'filling' && missedState !== 'filling' && !missed.card.hidden) {
+        missed.card.style.minWidth = `${missed.card.offsetWidth}px`;
+      } else if (state !== 'filling' && state !== 'done') {
+        missed.card.style.minWidth = '';
+      }
+      missedState = state;
+      if (!state) {
+        peeking = hovering = pinned = false;
+        clearTimeout(peekTimer);
+        missed.mark.hidden = true;
+        missed.card.hidden = true;
+        count.classList.remove('has-missed');
+        return;
+      }
+      const text: Record<MissedState, string> = {
+        missed: "Part of this page wasn't captured",
+        filling: 'Capturing the missed part…',
+        stuck: "Couldn't capture it. Scroll back over it slowly.",
+        done: 'Captured',
+      };
+      missed.title.textContent = text[state];
+      missed.card.classList.toggle('filling', state === 'filling');
+      missed.card.classList.toggle('done', state === 'done');
+      missed.go.hidden = state !== 'missed';
+      missed.frame.toggleAttribute('hidden', state === 'done');
+      missed.check.toggleAttribute('hidden', state !== 'done');
+      missed.mark.hidden = false;
+      missed.mark.classList.toggle('busy', state === 'filling');
+      missed.mark.classList.toggle('ok', state === 'done');
+      count.classList.add('has-missed');
+      if (say) {
+        peeking = true;
+        clearTimeout(peekTimer);
+        peekTimer = setTimeout(() => {
+          peeking = false;
+          showMissedCard();
+        }, 4000);
+      }
+      if (state === 'done') {
+        doneTimer = setTimeout(() => {
+          missedState = null;
+          this.setMissed(null);
+        }, 1800);
+      }
+      showMissedCard();
     },
   };
 }
